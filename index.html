@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>TX SENSOR MAP — by Dr.Jupetor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg:#fbfaf7; --panel:#ffffff; --border:#eae6dd; --border-strong:#ddd6c8;
+    --text:#1f1b16; --text-dim:#8b8477; --text-faint:#c2bcae;
+    --orange:#ff7a1f; --orange-deep:#d95a05; --orange-tint:#fff1e4;
+    --viewport-top:#232a33; --viewport-bot:#0d1116;
+    --font-sans:'IBM Plex Sans Thai', system-ui, sans-serif;
+    --font-mono:'JetBrains Mono', 'Courier New', monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text); font-family:var(--font-sans); overflow:hidden; }
+  #app{ display:flex; flex-direction:column; height:100vh; }
+
+  header{ display:flex; align-items:center; justify-content:space-between; padding:12px 18px;
+          border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; gap:10px; }
+  .brand{ display:flex; align-items:baseline; gap:10px; }
+  .brand h1{ margin:0; font-size:19px; font-weight:700; letter-spacing:0.2px; }
+  .brand .ver{ font-family:var(--font-mono); font-size:11px; color:var(--orange-deep); background:var(--orange-tint);
+        border:1px solid #ffdcb8; padding:2px 8px; border-radius:5px; }
+
+  .toolbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  button.btn{ font-family:var(--font-sans); font-weight:600; font-size:13px; color:var(--text);
+    background:var(--panel); border:1px solid var(--border-strong); border-radius:7px; padding:8px 14px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; }
+  button.btn:hover{ border-color:var(--text-dim); }
+  button.btn.primary{ background:var(--orange); color:#fff; border-color:var(--orange); }
+  button.btn.primary:hover{ background:var(--orange-deep); }
+  button.btn.active{ background:#1f1b16; color:#fff; border-color:#1f1b16; }
+  button.btn:disabled{ opacity:0.45; cursor:not-allowed; }
+  input[type=file]{ display:none; }
+
+  .main{ flex:1; display:flex; min-height:0; }
+
+  .viewport-wrap{ flex:1; position:relative; background:linear-gradient(180deg, var(--viewport-top) 0%, var(--viewport-bot) 100%); }
+  #canvasHost{ position:absolute; inset:0; }
+  #canvasHost canvas{ display:block; width:100%; height:100%; }
+  #markerLabels{ position:absolute; inset:0; pointer-events:none; }
+
+  .hint-pill{ position:absolute; top:14px; left:14px; background:rgba(20,24,29,0.75); color:#f1ede6;
+              font-size:12.5px; padding:8px 14px; border-radius:20px; backdrop-filter:blur(4px);
+              display:flex; align-items:center; gap:8px; pointer-events:none; }
+  .hint-pill .dot{ width:7px; height:7px; border-radius:50%; background:var(--orange); flex-shrink:0; }
+
+  .loading{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+            flex-direction:column; gap:10px; color:#cfd6dd; font-size:13px; }
+  .loading .spinner{ width:26px; height:26px; border:2.5px solid rgba(255,255,255,0.15); border-top-color:var(--orange);
+                      border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .marker-label{ position:absolute; transform:translate(-50%, -130%); pointer-events:none;
+                 font-family:var(--font-mono); font-size:11px; font-weight:600; white-space:nowrap;
+                 background:rgba(20,24,29,0.85); color:#fff; padding:3px 8px; border-radius:5px;
+                 border:1px solid rgba(255,255,255,0.15); }
+  .marker-label .n{ opacity:0.7; margin-right:4px; }
+
+  /* sidebar */
+  .sidebar{ width:320px; flex-shrink:0; background:var(--panel); border-left:1px solid var(--border);
+            display:flex; flex-direction:column; min-height:0; }
+  .sidebar-head{ padding:16px 18px 12px; border-bottom:1px solid var(--border); }
+  .sidebar-head h2{ margin:0 0 4px; font-size:14px; font-weight:600; }
+  .sidebar-head .count{ font-family:var(--font-mono); font-size:12px; color:var(--text-faint); }
+
+  .point-list{ flex:1; overflow-y:auto; padding:10px 12px; }
+  .point-card{ border:1px solid var(--border); border-radius:9px; padding:11px 12px; margin-bottom:9px; cursor:pointer;
+               transition:border-color .15s; position:relative; }
+  .point-card:hover{ border-color:var(--border-strong); }
+  .point-card.selected{ border-color:var(--orange); box-shadow:0 0 0 1px var(--orange); }
+  .point-card .top-row{ display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .point-card .swatch{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .point-card .name{ font-weight:600; font-size:13.5px; flex:1; }
+  .point-card .del{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:14px; padding:2px; }
+  .point-card .del:hover{ color:#d63c34; }
+  .point-card .type-tag{ font-size:11px; color:var(--text-dim); }
+  .point-card .coords{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-faint); margin-top:4px; }
+  .point-card textarea.notes{ width:100%; margin-top:7px; font-family:var(--font-sans); font-size:12px;
+                               border:1px solid var(--border); border-radius:6px; padding:6px 8px; resize:vertical; min-height:36px; }
+
+  .link-row{ display:flex; gap:6px; margin-top:8px; }
+  .link-row input{ flex:1; font-family:var(--font-mono); font-size:11.5px; padding:5px 7px;
+                    border:1px solid var(--border); border-radius:6px; min-width:0; }
+  .live-badge{ display:inline-flex; align-items:center; gap:5px; font-family:var(--font-mono); font-size:12px;
+               font-weight:600; margin-top:7px; padding:4px 9px; border-radius:6px; }
+  .live-badge.ok{ background:#eaf7ed; color:#1c7a37; }
+  .live-badge.off{ background:#f2f0ec; color:var(--text-dim); }
+  .live-badge .ldot{ width:6px; height:6px; border-radius:50%; }
+  .live-badge.ok .ldot{ background:#1c7a37; animation:pulse 1.6s ease-in-out infinite; }
+  .live-badge.off .ldot{ background:var(--text-faint); }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+  .unlink-btn{ background:none; border:none; color:var(--text-faint); font-size:11px; cursor:pointer; margin-left:6px; text-decoration:underline; }
+
+  .fb-settings{ position:absolute; top:52px; right:14px; background:var(--panel); border:1px solid var(--border-strong);
+                border-radius:10px; padding:14px 16px; width:250px; box-shadow:0 12px 28px -14px rgba(0,0,0,0.35); z-index:20; }
+  .fb-settings label{ font-size:11.5px; color:var(--text-dim); display:block; margin:8px 0 4px; }
+  .fb-settings label:first-child{ margin-top:0; }
+  .fb-settings input{ width:100%; font-family:var(--font-mono); font-size:12.5px; padding:6px 8px;
+                       border:1px solid var(--border-strong); border-radius:6px; }
+  .fb-settings .row{ display:flex; gap:8px; margin-top:12px; }
+  .fb-settings .row .btn{ flex:1; justify-content:center; padding:7px 0; font-size:12.5px; }
+
+  .empty-state{ text-align:center; color:var(--text-faint); font-size:12.5px; padding:40px 20px; line-height:1.7; }
+
+  .sidebar-foot{ padding:12px 14px; border-top:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap; }
+  .sidebar-foot .btn{ flex:1; justify-content:center; font-size:12.5px; padding:8px 10px; }
+
+  /* new-point form (modal-ish, anchored) */
+  .point-form{ position:absolute; background:var(--panel); border:1px solid var(--border-strong); border-radius:10px;
+               padding:14px 16px; width:240px; box-shadow:0 12px 28px -14px rgba(0,0,0,0.35); z-index:10; }
+  .point-form label{ font-size:11.5px; color:var(--text-dim); display:block; margin:8px 0 4px; }
+  .point-form label:first-child{ margin-top:0; }
+  .point-form input[type=text], .point-form select{
+    width:100%; font-family:var(--font-sans); font-size:13px; padding:7px 9px;
+    border:1px solid var(--border-strong); border-radius:6px; background:#fdfcfa;
+  }
+  .point-form .row{ display:flex; gap:8px; margin-top:12px; }
+  .point-form .row .btn{ flex:1; justify-content:center; padding:7px 0; font-size:12.5px; }
+
+  .legend{ padding:10px 14px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:8px 12px; }
+  .legend .item{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-dim); }
+  .legend .sw{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+
+  /* touch handling for the 3D viewport */
+  #canvasHost, #canvasHost canvas{ touch-action:none; }
+
+  .sidebar-backdrop{ display:none; }
+  .mobile-toggle{ display:none; }
+
+  /* ============== responsive: tablet & phone ============== */
+  @media (max-width: 860px){
+    header{ padding:10px 12px; }
+    .brand h1{ font-size:16px; }
+    .brand .ver{ font-size:10px; padding:2px 6px; }
+    .toolbar{ gap:6px; }
+    button.btn{ font-size:12px; padding:9px 11px; min-height:40px; }
+    .toolbar #addModeBtn{ order:-1; }
+
+    .mobile-toggle{ display:inline-flex; }
+
+    .sidebar{
+      position:fixed; top:0; right:0; bottom:0; width:min(340px, 86vw);
+      transform:translateX(100%); transition:transform .22s ease-out; z-index:30;
+      box-shadow:-8px 0 24px -10px rgba(0,0,0,0.25);
+    }
+    .sidebar.open{ transform:translateX(0); }
+
+    .sidebar-backdrop{
+      display:block; position:fixed; inset:0; background:rgba(20,24,29,0.4);
+      z-index:25; opacity:0; pointer-events:none; transition:opacity .2s;
+    }
+    .sidebar-backdrop.show{ opacity:1; pointer-events:auto; }
+
+    .point-form{ width:min(240px, 78vw); }
+    .point-form input[type=text], .point-form select,
+    .link-row input, .fb-settings input{ font-size:16px; } /* กัน iOS auto-zoom ตอน focus input */
+
+    .hint-pill{ font-size:11.5px; padding:7px 12px; max-width:80vw; }
+  }
+
+  @media (max-width: 480px){
+    .brand .ver{ display:none; }
+    button.btn span.btn-label{ display:none; }
+    button.btn{ padding:9px 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="brand">
+      <h1>TX SENSOR MAP</h1>
+      <span class="ver">by Dr.Jupetor</span>
+    </div>
+    <div class="toolbar">
+      <button class="btn primary" id="addModeBtn">+ <span class="btn-label">เพิ่มจุดติดตั้ง</span></button>
+      <button class="btn" id="resetViewBtn">⟳ <span class="btn-label">รีเซ็ตมุมมอง</span></button>
+      <button class="btn" id="exportBtn">⭳ <span class="btn-label">Export JSON</span></button>
+      <button class="btn" id="importBtn">⭱ <span class="btn-label">Import JSON</span></button>
+      <button class="btn" id="fbSettingsBtn">⚙ <span class="btn-label">Firebase</span></button>
+      <button class="btn mobile-toggle" id="mobileSidebarBtn">📋 <span id="mobileSidebarCount">0</span></button>
+      <input type="file" id="importFile" accept="application/json">
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <div class="viewport-wrap" id="viewportWrap">
+      <div id="canvasHost"></div>
+      <div class="loading" id="loadingEl"><div class="spinner"></div><div>กำลังโหลดโมเดล…</div></div>
+      <div class="hint-pill" id="hintPill" style="display:none;"><span class="dot"></span><span>โหมดเพิ่มจุด — คลิกบนตัวหม้อแปลงเพื่อวางจุดติดตั้งเซนเซอร์</span></div>
+      <div id="markerLabels"></div>
+    </div>
+
+    <div class="sidebar" id="sidebarEl">
+      <div class="sidebar-head">
+        <h2>จุดติดตั้งเซนเซอร์</h2>
+        <span class="count" id="pointCount">0 จุด</span>
+      </div>
+      <div class="point-list" id="pointList">
+        <div class="empty-state" id="emptyState">ยังไม่มีจุดติดตั้ง<br>กด "+ เพิ่มจุดติดตั้ง" แล้วคลิกบนตัวหม้อแปลง</div>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="sidebar-foot">
+        <button class="btn" id="focusAllBtn">ดูทั้งหมด</button>
+        <button class="btn" id="clearAllBtn">ล้างทั้งหมด</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============== ตั้งค่าประเภทเซ็นเซอร์ ==============
+const SENSOR_TYPES = [
+  { id:'oil_temp',    label:'อุณหภูมิน้ำมัน',        color:'#ff7a1f' },
+  { id:'winding_temp',label:'อุณหภูมิขดลวด',         color:'#d63c34' },
+  { id:'vibration',   label:'การสั่นสะเทือน',         color:'#8b5cf6' },
+  { id:'pd',          label:'Partial Discharge',      color:'#0891a8' },
+  { id:'bushing_temp',label:'อุณหภูมิบุชชิ่ง',        color:'#d98c00' },
+  { id:'oil_level',   label:'ระดับน้ำมัน',            color:'#2ea043' },
+  { id:'other',       label:'อื่นๆ',                  color:'#8b8477' },
+];
+function typeInfo(id){ return SENSOR_TYPES.find(t => t.id === id) || SENSOR_TYPES[SENSOR_TYPES.length-1]; }
+
+// ============== state ==============
+let points = [];        // { id, x,y,z, name, type, notes, plant, room }
+let selectedId = null;
+let addMode = false;
+let pendingPoint = null; // point clicked, awaiting form confirm
+
+const STORAGE_KEY = 'txSensorMapPoints';
+function loadPoints(){
+  try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); } catch(_) {}
+  return [];
+}
+function savePoints(){
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(points)); } catch(_) {}
+}
+points = loadPoints();
+
+// ============== Firebase (เชื่อมต่อเซนเซอร์จริงจาก Node-RED/Firestore) ==============
+const FB_STORAGE_KEY = 'txSensorMapFbConfig';
+function loadFbConfig(){
+  try { const raw = localStorage.getItem(FB_STORAGE_KEY); if (raw) return JSON.parse(raw); } catch(_) {}
+  return { apiKey: 'AIzaSyA9duN7uzwd8LHZuhFj5LBcKSx5k06C-a8', projectId: 'motoreye-b8829' };
+}
+function saveFbConfig(cfg){ try { localStorage.setItem(FB_STORAGE_KEY, JSON.stringify(cfg)); } catch(_) {} }
+
+let fbApp = null, fbDb = null;
+function ensureFbApp(){
+  const cfg = loadFbConfig();
+  if (!fbApp || fbApp.__cfgKey !== cfg.apiKey + cfg.projectId) {
+    try {
+      fbApp = firebase.initializeApp({ apiKey: cfg.apiKey, projectId: cfg.projectId, authDomain: cfg.projectId + '.firebaseapp.com' }, 'txmap-' + Date.now());
+    } catch(e) { fbApp = firebase.app(); }
+    fbApp.__cfgKey = cfg.apiKey + cfg.projectId;
+    fbDb = fbApp.firestore();
+  }
+  return fbDb;
+}
+
+const liveSubs = {};  // pointId -> unsubscribe fn
+const liveData = {};  // pointId -> latest Firestore doc data
+
+function subscribePointSensor(pt){
+  unsubscribePointSensor(pt.id);
+  if (!pt.plant || !pt.room) return;
+  const db = ensureFbApp();
+  liveSubs[pt.id] = db.collection('plants').doc(pt.plant).collection('rooms').doc(pt.room).onSnapshot(
+    (snap) => { liveData[pt.id] = snap.exists ? snap.data() : null; renderPointList(); },
+    () => { liveData[pt.id] = null; renderPointList(); }
+  );
+}
+function unsubscribePointSensor(id){
+  if (liveSubs[id]) { liveSubs[id](); delete liveSubs[id]; }
+  delete liveData[id];
+}
+
+// ============== Three.js setup ==============
+const viewportWrap = document.getElementById('viewportWrap');
+const canvasHost = document.getElementById('canvasHost');
+const loadingEl = document.getElementById('loadingEl');
+const hintPill = document.getElementById('hintPill');
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+camera.position.set(2.5, 1.8, 2.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+canvasHost.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.3;
+controls.maxDistance = 30;
+
+// lights
+scene.add(new THREE.HemisphereLight(0xdfe8f0, 0x1a1e22, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.1);
+key.position.set(4, 6, 3);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9fc8ff, 0.35);
+fill.position.set(-4, 2, -3);
+scene.add(fill);
+
+// ground grid for scale reference
+const grid = new THREE.GridHelper(6, 24, 0x3a4450, 0x252d35);
+grid.position.y = 0;
+scene.add(grid);
+
+let modelRoot = null;
+let modelRadius = 1;
+
+function resize(){
+  const w = viewportWrap.clientWidth, h = viewportWrap.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', resize);
+
+function frameModel(){
+  if (!modelRoot) return;
+  const box = new THREE.Box3().setFromObject(modelRoot);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  modelRadius = Math.max(size.x, size.y, size.z) * 0.6 || 1;
+  grid.scale.setScalar(modelRadius * 1.6);
+  controls.target.copy(center);
+  camera.position.copy(center).add(new THREE.Vector3(modelRadius*1.4, modelRadius*1.0, modelRadius*1.4));
+  camera.near = modelRadius/100; camera.far = modelRadius*50;
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+// ============== load model (โหลดจากไฟล์แยก) ==============
+const MODEL_URL = "transformer_clean_v1.glb"; // ต้องอยู่โฟลเดอร์เดียวกับไฟล์ .html นี้
+
+const loader = new THREE.GLTFLoader();
+loader.load(MODEL_URL, (gltf) => {
+  modelRoot = gltf.scene;
+  modelRoot.traverse(o => { if (o.isMesh) { o.castShadow=false; o.receiveShadow=false; } });
+  scene.add(modelRoot);
+  frameModel();
+  loadingEl.style.display = 'none';
+  rebuildMarkers();
+}, undefined, (err) => {
+  loadingEl.innerHTML = '<div style="color:#f0555f; text-align:center; max-width:260px;">โหลดโมเดลไม่สำเร็จ<br><span style="font-size:11px; opacity:0.8;">ตรวจสอบว่าไฟล์ ' + MODEL_URL + ' อยู่โฟลเดอร์เดียวกับ .html นี้ และเปิดผ่าน server (ไม่ใช่ดับเบิลคลิกไฟล์ตรงๆ)</span></div>';
+  console.error(err);
+});
+
+resize();
+
+// ============== raycasting / add point ==============
+const raycaster = new THREE.Raycaster();
+const mouseNDC = new THREE.Vector2();
+
+renderer.domElement.addEventListener('click', (e) => {
+  if (!addMode || !modelRoot) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouseNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouseNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouseNDC, camera);
+  const hits = raycaster.intersectObject(modelRoot, true);
+  if (!hits.length) return;
+  const p = hits[0].point;
+  showPointForm(p, e.clientX, e.clientY);
+});
+
+function showPointForm(worldPos, screenX, screenY){
+  closePointForm();
+  const wrapRect = viewportWrap.getBoundingClientRect();
+  const form = document.createElement('div');
+  form.className = 'point-form';
+  form.id = 'activePointForm';
+  const idx = points.length + 1;
+  form.innerHTML = `
+    <label>ชื่อจุด</label>
+    <input type="text" id="pfName" value="เซนเซอร์ ${idx}">
+    <label>ประเภทเซ็นเซอร์</label>
+    <select id="pfType">
+      ${SENSOR_TYPES.map(t => `<option value="${t.id}">${t.label}</option>`).join('')}
+    </select>
+    <div class="row">
+      <button class="btn" id="pfCancel">ยกเลิก</button>
+      <button class="btn primary" id="pfSave">บันทึก</button>
+    </div>
+  `;
+  let left = screenX - wrapRect.left + 12;
+  let top = screenY - wrapRect.top + 12;
+  if (left + 250 > wrapRect.width) left = wrapRect.width - 260;
+  if (top + 200 > wrapRect.height) top = wrapRect.height - 210;
+  form.style.left = Math.max(8,left) + 'px';
+  form.style.top = Math.max(8,top) + 'px';
+  viewportWrap.appendChild(form);
+
+  document.getElementById('pfCancel').onclick = closePointForm;
+  document.getElementById('pfSave').onclick = () => {
+    const name = document.getElementById('pfName').value.trim() || ('เซนเซอร์ ' + idx);
+    const type = document.getElementById('pfType').value;
+    addPoint(worldPos, name, type, '');
+    closePointForm();
+  };
+  document.getElementById('pfName').focus();
+  document.getElementById('pfName').select();
+}
+function closePointForm(){
+  const f = document.getElementById('activePointForm');
+  if (f) f.remove();
+}
+
+// ============== marker meshes ==============
+let markerGroup = new THREE.Group();
+scene.add(markerGroup);
+
+function markerGeometry(){ return new THREE.SphereGeometry(0.02, 16, 16); }
+
+function rebuildMarkers(){
+  markerGroup.clear();
+  const r = modelRadius > 0 ? modelRadius : 1;
+  points.forEach(pt => {
+    const info = typeInfo(pt.type);
+    const geo = new THREE.SphereGeometry(0.018 * r, 16, 16);
+    const mat = new THREE.MeshStandardMaterial({ color: info.color, emissive: info.color, emissiveIntensity: 0.35 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(pt.x, pt.y, pt.z);
+    mesh.userData.pointId = pt.id;
+    mesh.userData.baseScale = 1;
+    markerGroup.add(mesh);
+  });
+}
+
+function updateMarkerPulse(){
+  const t = performance.now() * 0.004;
+  const pulse = 0.5 + 0.5 * Math.sin(t);      // 0..1
+  markerGroup.children.forEach(mesh => {
+    const pt = points.find(p => p.id === mesh.userData.pointId);
+    const isLive = !!(pt && pt.plant && pt.room && liveData[pt.id]);
+    if (isLive) {
+      mesh.material.emissiveIntensity = 0.3 + pulse * 0.9;
+      const s = 1 + pulse * 0.35;
+      mesh.scale.setScalar(s);
+    } else {
+      mesh.material.emissiveIntensity = 0.35;
+      mesh.scale.setScalar(1);
+    }
+  });
+}
+
+function addPoint(worldPos, name, type, notes){
+  const pt = { id: 'p' + Date.now() + Math.random().toString(16).slice(2,6), x:worldPos.x, y:worldPos.y, z:worldPos.z, name, type, notes, plant:'', room:'' };
+  points.push(pt);
+  savePoints();
+  rebuildMarkers();
+  renderPointList();
+  selectedId = pt.id;
+  renderPointList();
+}
+function removePoint(id){
+  unsubscribePointSensor(id);
+  points = points.filter(p => p.id !== id);
+  if (selectedId === id) selectedId = null;
+  savePoints();
+  rebuildMarkers();
+  renderPointList();
+}
+function clearAllPoints(){
+  if (!points.length) return;
+  if (!confirm('ลบจุดติดตั้งทั้งหมด ' + points.length + ' จุด?')) return;
+  points.forEach(p => unsubscribePointSensor(p.id));
+  points = [];
+  selectedId = null;
+  savePoints();
+  rebuildMarkers();
+  renderPointList();
+}
+
+// ============== sidebar list ==============
+const pointList = document.getElementById('pointList');
+const emptyState = document.getElementById('emptyState');
+const pointCount = document.getElementById('pointCount');
+
+function renderPointList(){
+  pointCount.textContent = points.length + ' จุด';
+  const mobileBadge = document.getElementById('mobileSidebarCount');
+  if (mobileBadge) mobileBadge.textContent = points.length;
+  pointList.querySelectorAll('.point-card').forEach(el => el.remove());
+  emptyState.style.display = points.length ? 'none' : 'block';
+
+  points.forEach(pt => {
+    const info = typeInfo(pt.type);
+    const live = liveData[pt.id];
+    const linked = !!(pt.plant && pt.room);
+    const card = document.createElement('div');
+    card.className = 'point-card' + (pt.id === selectedId ? ' selected' : '');
+    card.innerHTML = `
+      <div class="top-row">
+        <span class="swatch" style="background:${info.color};"></span>
+        <span class="name">${escapeHtml(pt.name)}</span>
+        <button class="del" title="ลบจุดนี้">✕</button>
+      </div>
+      <div class="type-tag">${info.label}</div>
+      <div class="coords">x:${pt.x.toFixed(3)} y:${pt.y.toFixed(3)} z:${pt.z.toFixed(3)}</div>
+      <textarea class="notes" placeholder="บันทึกเพิ่มเติม (ถ้ามี)">${escapeHtml(pt.notes||'')}</textarea>
+      <div class="link-row">
+        <input type="text" class="lp-plant" placeholder="plant" value="${escapeHtml(pt.plant||'')}">
+        <input type="text" class="lp-room" placeholder="room" value="${escapeHtml(pt.room||'')}">
+        <button class="btn" style="padding:5px 10px; font-size:11.5px;" title="เชื่อมต่อ">🔗</button>
+      </div>
+      ${linked
+        ? (live
+            ? `<div class="live-badge ok"><span class="ldot"></span>${typeof live.temp==='number' ? live.temp.toFixed(1)+'°C' : '–'}${typeof live.humi==='number' ? ' · '+live.humi.toFixed(1)+'%' : ''}<button class="unlink-btn">ยกเลิกเชื่อมต่อ</button></div>`
+            : `<div class="live-badge off"><span class="ldot"></span>เชื่อมต่อแล้ว รอข้อมูล…<button class="unlink-btn">ยกเลิกเชื่อมต่อ</button></div>`)
+        : `<div class="live-badge off"><span class="ldot"></span>ยังไม่เชื่อมต่อเซนเซอร์จริง</div>`}
+    `;
+    card.querySelector('.del').onclick = (e) => { e.stopPropagation(); removePoint(pt.id); };
+    card.querySelector('.notes').addEventListener('input', (e) => {
+      pt.notes = e.target.value; savePoints();
+    });
+    card.querySelector('.notes').addEventListener('click', (e) => e.stopPropagation());
+    card.querySelectorAll('.link-row input').forEach(inp => inp.addEventListener('click', e => e.stopPropagation()));
+    card.querySelector('.link-row .btn').onclick = (e) => {
+      e.stopPropagation();
+      pt.plant = card.querySelector('.lp-plant').value.trim();
+      pt.room = card.querySelector('.lp-room').value.trim();
+      savePoints();
+      subscribePointSensor(pt);
+      renderPointList();
+    };
+    const unlinkBtn = card.querySelector('.unlink-btn');
+    if (unlinkBtn) unlinkBtn.onclick = (e) => {
+      e.stopPropagation();
+      pt.plant = ''; pt.room = '';
+      unsubscribePointSensor(pt.id);
+      savePoints();
+      renderPointList();
+    };
+    card.onclick = () => { selectedId = pt.id; renderPointList(); focusPoint(pt); };
+    pointList.appendChild(card);
+  });
+}
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function focusPoint(pt){
+  const target = new THREE.Vector3(pt.x, pt.y, pt.z);
+  controls.target.copy(target);
+}
+
+// ============== legend ==============
+const legendEl = document.getElementById('legend');
+SENSOR_TYPES.forEach(t => {
+  const item = document.createElement('div');
+  item.className = 'item';
+  item.innerHTML = `<span class="sw" style="background:${t.color};"></span>${t.label}`;
+  legendEl.appendChild(item);
+});
+
+// ============== toolbar ==============
+const addModeBtn = document.getElementById('addModeBtn');
+addModeBtn.onclick = () => {
+  addMode = !addMode;
+  addModeBtn.classList.toggle('active', addMode);
+  addModeBtn.classList.toggle('primary', !addMode);
+  hintPill.style.display = addMode ? 'flex' : 'none';
+  if (!addMode) closePointForm();
+};
+
+document.getElementById('resetViewBtn').onclick = frameModel;
+
+document.getElementById('exportBtn').onclick = () => {
+  const blob = new Blob([JSON.stringify(points, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'tx-sensor-points.json';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const importFile = document.getElementById('importFile');
+document.getElementById('importBtn').onclick = () => importFile.click();
+importFile.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const arr = JSON.parse(reader.result);
+      if (!Array.isArray(arr)) throw new Error('รูปแบบไฟล์ไม่ถูกต้อง');
+      points = arr;
+      savePoints();
+      rebuildMarkers();
+      renderPointList();
+    } catch(err) {
+      alert('อ่านไฟล์ไม่สำเร็จ: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  importFile.value = '';
+});
+
+document.getElementById('clearAllBtn').onclick = clearAllPoints;
+document.getElementById('focusAllBtn').onclick = frameModel;
+
+// ============== render loop ==============
+const markerLabelsHost = document.getElementById('markerLabels');
+const labelEls = {}; // pointId -> div
+
+function updateMarkerLabels(){
+  const rect = renderer.domElement.getBoundingClientRect();
+  points.forEach(pt => {
+    const live = liveData[pt.id];
+    const hasLive = pt.plant && pt.room && live;
+    if (!hasLive) {
+      if (labelEls[pt.id]) { labelEls[pt.id].remove(); delete labelEls[pt.id]; }
+      return;
+    }
+    let el = labelEls[pt.id];
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'marker-label';
+      markerLabelsHost.appendChild(el);
+      labelEls[pt.id] = el;
+    }
+    const v = new THREE.Vector3(pt.x, pt.y, pt.z).project(camera);
+    const x = (v.x * 0.5 + 0.5) * rect.width;
+    const y = (-v.y * 0.5 + 0.5) * rect.height;
+    const behind = v.z > 1;
+    el.style.display = behind ? 'none' : 'block';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    const tempTxt = typeof live.temp === 'number' ? live.temp.toFixed(1) + '°C' : '–';
+    el.innerHTML = '<span class="n">' + escapeHtml(pt.name) + '</span>' + tempTxt;
+  });
+  // clean up labels for removed points
+  Object.keys(labelEls).forEach(id => {
+    if (!points.find(p => p.id === id)) { labelEls[id].remove(); delete labelEls[id]; }
+  });
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  updateMarkerPulse();
+  renderer.render(scene, camera);
+  updateMarkerLabels();
+}
+animate();
+
+// ============== Firebase settings panel ==============
+const fbSettingsBtn = document.getElementById('fbSettingsBtn');
+fbSettingsBtn.onclick = () => {
+  const existing = document.getElementById('fbSettingsPanel');
+  if (existing) { existing.remove(); return; }
+  const cfg = loadFbConfig();
+  const panel = document.createElement('div');
+  panel.className = 'fb-settings';
+  panel.id = 'fbSettingsPanel';
+  panel.innerHTML = `
+    <label>Project ID</label>
+    <input type="text" id="fbProjectId" value="${escapeHtml(cfg.projectId)}">
+    <label>API Key</label>
+    <input type="text" id="fbApiKey" value="${escapeHtml(cfg.apiKey)}">
+    <div class="row">
+      <button class="btn" id="fbCancel">ปิด</button>
+      <button class="btn primary" id="fbSave">บันทึก</button>
+    </div>
+  `;
+  document.body.appendChild(panel);
+  const wrap = document.querySelector('header');
+  const rect = fbSettingsBtn.getBoundingClientRect();
+  panel.style.position = 'fixed';
+  panel.style.top = (rect.bottom + 6) + 'px';
+  panel.style.right = (window.innerWidth - rect.right) + 'px';
+  document.getElementById('fbCancel').onclick = () => panel.remove();
+  document.getElementById('fbSave').onclick = () => {
+    const newCfg = {
+      projectId: document.getElementById('fbProjectId').value.trim(),
+      apiKey: document.getElementById('fbApiKey').value.trim(),
+    };
+    saveFbConfig(newCfg);
+    points.filter(p => p.plant && p.room).forEach(subscribePointSensor);
+    panel.remove();
+  };
+};
+
+renderPointList();
+// subscribe ให้จุดที่เคยเชื่อมต่อไว้แล้ว (โหลดจาก localStorage) กลับมาฟังข้อมูลสดอีกครั้ง
+points.filter(p => p.plant && p.room).forEach(subscribePointSensor);
+
+// ============== มือถือ/แท็บเล็ต: เปิด-ปิดแผงรายการจุดแบบ drawer ==============
+const sidebarEl = document.getElementById('sidebarEl');
+const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+const mobileSidebarBtn = document.getElementById('mobileSidebarBtn');
+
+function openSidebarDrawer(){
+  sidebarEl.classList.add('open');
+  sidebarBackdrop.classList.add('show');
+}
+function closeSidebarDrawer(){
+  sidebarEl.classList.remove('open');
+  sidebarBackdrop.classList.remove('show');
+}
+mobileSidebarBtn.onclick = () => {
+  sidebarEl.classList.contains('open') ? closeSidebarDrawer() : openSidebarDrawer();
+};
+sidebarBackdrop.onclick = closeSidebarDrawer;
+
+// ปิด drawer อัตโนมัติหลังกดเลือกจุด (เฉพาะจอเล็ก) เพื่อกลับไปดูโมเดลได้ทันที
+pointList.addEventListener('click', (e) => {
+  if (window.innerWidth <= 860 && e.target.closest('.point-card') && !e.target.closest('textarea, input, button')) {
+    setTimeout(closeSidebarDrawer, 150);
+  }
+});
+</script>
+</body>
+</html>
